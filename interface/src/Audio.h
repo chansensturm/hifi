@@ -171,6 +171,8 @@ private:
     QAudioFormat _inputFormat;
     QIODevice* _inputDevice;
     int _numInputCallbackBytes;
+    int16_t* _inputProcessingBuffer;
+    unsigned _inputProcessingBufferLengthInSamples;
     int16_t _localProceduralSamples[NETWORK_BUFFER_LENGTH_SAMPLES_PER_CHANNEL];
     QAudioOutput* _audioOutput;
     QAudioFormat _desiredOutputFormat;

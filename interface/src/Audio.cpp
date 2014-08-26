@@ -67,6 +67,8 @@ Audio::Audio(QObject* parent) :
     _outputFormat(),
     _outputFrameSize(0),
     _numOutputCallbackBytes(0),
+    _inputProcessingBuffer(NULL),
+    _inputProcessingBufferLengthInSamples(0),
     _loopbackAudioOutput(NULL),
     _loopbackOutputDevice(NULL),
     _proceduralAudioOutput(NULL),
@@ -467,7 +469,15 @@ void Audio::handleAudioInput() {
     float inputToNetworkInputRatio = calculateDeviceToNetworkInputRatio(_numInputCallbackBytes);
 
     int inputSamplesRequired = (int)((float)NETWORK_BUFFER_LENGTH_SAMPLES_PER_CHANNEL * inputToNetworkInputRatio);
-
+    if (_inputProcessingBufferLengthInSamples < inputSamplesRequired) {
+        qCritical() << "Input processing buffer size, actual="  
+                    << _inputProcessingBufferLengthInSamples
+                    << " ,expected="
+                    << inputSamplesRequired 
+                    << "\n";
+        return; // we're about to over-write memory
+    }
+        
     QByteArray inputByteArray = _inputDevice->readAll();
 
     if (_peqEnabled && !_muted) {
@@ -513,8 +523,7 @@ void Audio::handleAudioInput() {
 
     while (_inputRingBuffer.samplesAvailable() >= inputSamplesRequired) {
 
-        int16_t* inputAudioSamples = new int16_t[inputSamplesRequired];
-        _inputRingBuffer.readSamples(inputAudioSamples, inputSamplesRequired);
+        _inputRingBuffer.readSamples(_inputProcessingBuffer, inputSamplesRequired);
         
         const int numNetworkBytes = _isStereoInput ? NETWORK_BUFFER_LENGTH_BYTES_STEREO : NETWORK_BUFFER_LENGTH_BYTES_PER_CHANNEL;
         const int numNetworkSamples = _isStereoInput ? NETWORK_BUFFER_LENGTH_SAMPLES_STEREO : NETWORK_BUFFER_LENGTH_SAMPLES_PER_CHANNEL;
@@ -524,7 +533,7 @@ void Audio::handleAudioInput() {
 
         if (!_muted) {
             // we aren't muted, downsample the input audio
-            linearResampling((int16_t*) inputAudioSamples, networkAudioSamples,
+            linearResampling((int16_t*) _inputProcessingBuffer, networkAudioSamples,
                              inputSamplesRequired,  numNetworkSamples,
                              _inputFormat, _desiredInputFormat);
             
@@ -740,7 +749,6 @@ void Audio::handleAudioInput() {
             Application::getInstance()->getBandwidthMeter()->outputStream(BandwidthMeter::AUDIO)
                 .updateValue(numAudioBytes + leadingBytes);
         }
-        delete[] inputAudioSamples;
     }
 }
 
@@ -1673,6 +1681,13 @@ bool Audio::switchInputToAudioDevice(const QAudioDeviceInfo& inputDeviceInfo) {
                 // how do we want to handle input working, but output not working?
                 int numFrameSamples = calculateNumberOfFrameSamples(_numInputCallbackBytes);
                 _inputRingBuffer.resizeForFrameSize(numFrameSamples);
+                
+                float fractionalInputSamplesRequired = 
+                    calculateDeviceToNetworkInputRatio(_numInputCallbackBytes) * (float)NETWORK_BUFFER_LENGTH_SAMPLES_PER_CHANNEL;
+                _inputProcessingBufferLengthInSamples = (unsigned)fractionalInputSamplesRequired;
+                
+                _inputProcessingBuffer = new int16_t[(int)_inputProcessingBufferLengthInSamples];
+                
                 _inputDevice = _audioInput->start();
                 connect(_inputDevice, SIGNAL(readyRead()), this, SLOT(handleAudioInput()));
                 
