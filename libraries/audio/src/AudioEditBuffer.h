@@ -102,7 +102,25 @@ inline void AudioEditBuffer<T>::linearFade(uint32_t start, uint32_t stop, bool s
 
 template< typename T >
 inline void AudioEditBuffer<T>::exponentialFade(uint32_t start, uint32_t stop, bool slope) {
-    // TBD
+    
+    if (start >= stop || start > this->_frameCount || stop > this->_frameCount ) {
+        return;
+    }
+    
+    uint32_t count = stop - start;
+    float32_t coeff;
+    
+    if (slope) { // 0.0 to 1.0f
+        coeff = (logf(1.0f) - logf(EPSILON)) / (float32_t)count;
+    } else { // 1.0f to 0.0f
+        coeff = (logf(EPSILON) - logf(1.0f)) / (float32_t)count;
+    }
+    
+    for (uint32_t i = start; i < stop; ++i) {
+        for (uint32_t j = 0; j < this->_channelCount; ++j) {
+            this->_frameBuffer[j][i] += this->_frameBuffer[j][i] * coeff;
+        }
+    }
 }
 
 typedef AudioEditBuffer< float32_t > AudioEditBufferFloat32;
